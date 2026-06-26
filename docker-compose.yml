@@ -1,0 +1,72 @@
+version: "3.9"
+
+# ─── LMS Local Development ────────────────────────────────────────
+# Provides a local Postgres instance. The Next.js app connects to it
+# plus any cloud services configured via .env (Supabase, Mux, Resend,
+# Upstash Redis). The in-memory rate-limit fallback works without Redis.
+#
+# Usage:
+#   docker compose up -d            # start Postgres
+#   cp .env.example .env            # configure credentials
+#   pnpm run dev                    # run the app on your host
+#
+# To run everything in Docker (less convenient for hot-reload):
+#   docker compose --profile full up -d
+# ───────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lms
+      POSTGRES_PASSWORD: lms_dev
+      POSTGRES_DB: lms
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Test database (separate to run integration tests without wiping dev data)
+  testdb:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lms_test
+      POSTGRES_PASSWORD: lms_test
+      POSTGRES_DB: lms_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    profiles: [test]
+    tmpfs: /var/lib/postgresql/data
+
+  # Full-stack mode (optional — requires .env with all cloud keys)
+  app:
+    profile: full
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://lms:lms_dev@postgres:5432/lms
+      DIRECT_URL: postgresql://lms:lms_dev@postgres:5432/lms
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

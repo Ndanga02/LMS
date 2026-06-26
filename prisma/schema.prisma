@@ -1,0 +1,850 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PlatformRole {
+  SUPER_ADMIN
+  USER
+}
+
+enum TenantRole {
+  TENANT_ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum EnrollmentMode {
+  PURCHASE_ONLY
+  INTEGRATION_ONLY
+  BOTH
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnrollmentSource {
+  PURCHASE
+  INTEGRATION
+  MANUAL
+  TENANT_ADMIN
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  REVOKED
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  ALL_LEVELS
+}
+
+enum TenantPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+// New for retention & rich lessons
+enum LessonType {
+  VIDEO
+  TEXT
+  QUIZ
+  FILE
+  ASSIGNMENT
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Users & platform access
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// LMS user profile (email magic link sign-in)
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  image        String?
+  platformRole PlatformRole @default(USER)
+
+  // Profile extensions for instructors & students
+  bio           String?   @db.Text
+  title         String? // e.g. "Senior Software Engineer @ Acme"
+  websiteUrl    String?
+  emailVerified DateTime?
+
+  // Notification preferences
+  emailNotifications Boolean @default(true)
+
+  // Admin: user moderation
+  suspendedAt DateTime?
+
+  // Retention & gamification
+  currentStreakDays Int       @default(0)
+  longestStreakDays Int       @default(0)
+  lastActiveDate    DateTime?
+  totalPoints       Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships     TenantMembership[]
+  enrollments     Enrollment[]
+  purchases       Purchase[]
+  courses         Course[]           @relation("CourseInstructor")
+  lessonProgress  LessonProgress[]
+  lessonNotes     LessonNote[]
+  lessonBookmarks LessonBookmark[]
+  reviews         CourseReview[]
+  certificates    Certificate[]
+  comments        CourseComment[]
+  quizAttempts    QuizAttempt[]
+  achievements        UserAchievement[]
+  notifications       Notification[]
+  calendarEvents      CalendarEvent[]   @relation("TargetUser")
+  createdCalendarEvents CalendarEvent[]  @relation("CreatedEvents")
+  submissions         AssignmentSubmission[]
+  grades              Grade[]
+  gradesGiven         Grade[]            @relation("GradedBy")
+  accounts            Account[]
+  sessions            Session[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-tenancy
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Organization / leased LMS instance
+model Tenant {
+  id     String       @id @default(cuid())
+  slug   String       @unique
+  name   String
+  status TenantStatus @default(PENDING)
+
+  /// Main marketplace tenant (your public course store)
+  isPlatform Boolean @default(false)
+
+  /// How students can join courses on this tenant
+  enrollmentMode EnrollmentMode @default(BOTH)
+
+  // Branding & presence (premium white-label retention)
+  logoUrl        String?
+  logoDarkUrl    String?
+  primaryColor   String? @default("#f97316") // Vibrant orange
+  secondaryColor String? @default("#171717") // Deep near-black
+  accentColor    String? @default("#f97316")
+  description    String? @db.Text
+  websiteUrl     String?
+  customDomain   String? @unique
+  supportEmail   String?
+  welcomeMessage String? @db.Text
+
+  // Business / retention for leasing companies
+  commissionPercent Int @default(15) // Platform take on marketplace sales from this tenant's courses (0-100)
+
+  // Onboarding
+  onboardingComplete Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  TenantMembership[]
+  courses      Course[]
+  enrollments  Enrollment[]
+  purchases    Purchase[]
+  integration  TenantIntegration?
+  subscription TenantSubscription?
+  calendarEvents CalendarEvent[]
+}
+
+model TenantMembership {
+  id        String     @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      TenantRole @default(STUDENT)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+/// API keys & auto-enrollment rules for external website integrations (your "lease" model)
+model TenantIntegration {
+  id       String @id @default(cuid())
+  tenantId String @unique
+
+  /// SHA-256 hash of the API key (never store plaintext)
+  apiKeyHash String @unique
+
+  autoEnrollEnabled Boolean @default(true)
+
+  /// Allowed origins for embed / CORS
+  allowedOrigins String[] @default([])
+
+  /// Allowed IPs / CIDR ranges for server-to-server requests
+  allowedIps String[] @default([])
+
+  /// Optional webhook called after auto-enrollment
+  webhookUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// SaaS billing/lease plan for tenants (used when you charge orgs for their own branded LMS)
+model TenantSubscription {
+  id       String @id @default(cuid())
+  tenantId String @unique
+
+  plan   TenantPlan         @default(STARTER)
+  status SubscriptionStatus @default(TRIALING)
+
+  // Provider-agnostic (we'll wire Stripe or Lemon Squeezy later)
+  provider          String? // "stripe" | "lemon"
+  providerId        String?
+  currentPeriodEnd  DateTime?
+  trialEndsAt       DateTime?
+  cancelAtPeriodEnd Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Courses & content
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Course {
+  id           String  @id @default(cuid())
+  tenantId     String
+  instructorId String?
+
+  title        String
+  slug         String
+  description  String? @db.Text
+  thumbnailUrl String?
+
+  /// Price in cents (0 = free). Used for direct purchase on marketplace.
+  priceCents Int    @default(0)
+  currency   String @default("USD")
+
+  status CourseStatus @default(DRAFT)
+  level  CourseLevel  @default(ALL_LEVELS)
+
+  // Rich marketing content
+  whatYouWillLearn String[] @default([])
+  requirements     String[] @default([])
+
+  // Discovery & recommendations
+  tags       String[] @default([])
+  category   String?
+  isFeatured Boolean  @default(false)
+
+  estimatedDurationMin Int? // sum of lessons or manual
+
+  /// Visible on the main platform catalog (for leased tenant courses)
+  isMarketplaceListed Boolean @default(false)
+
+  /// Max students allowed (null = unlimited)
+  maxStudents Int?
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instructor   User?           @relation("CourseInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  sections     CourseSection[]
+  lessons      Lesson[]
+  enrollments  Enrollment[]
+  purchases    Purchase[]
+  reviews      CourseReview[]
+  certificates Certificate[]
+  comments        CourseComment[]
+  calendarEvents  CalendarEvent[]
+  grades          Grade[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@index([tenantId, isMarketplaceListed])
+  @@index([tenantId, isFeatured])
+}
+
+// Curriculum sections (modules) – production LMS standard
+model CourseSection {
+  id          String  @id @default(cuid())
+  courseId    String
+  title       String
+  description String? @db.Text
+  order       Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId, order])
+}
+
+model Lesson {
+  id        String  @id @default(cuid())
+  courseId  String
+  sectionId String? // optional for gradual migration / simple courses
+
+  title       String
+  slug        String
+  content     String? @db.Text // rich text / markdown
+  videoUrl    String? // YouTube, Vimeo, or direct MP4 (for custom player)
+  order       Int     @default(0)
+  durationMin Int?
+  dueDate     DateTime? // optional deadline for assignments, quizzes, or scheduled lessons
+
+  type        LessonType @default(VIDEO)
+  isPublished Boolean    @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  section   CourseSection?   @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  progress  LessonProgress[]
+  resources LessonResource[]
+  notes     LessonNote[]
+  bookmarks LessonBookmark[]
+  comments  CourseComment[]
+  quiz      Quiz?
+  submissions AssignmentSubmission[]
+  grades       Grade[]
+
+  @@unique([courseId, slug])
+  @@index([courseId, order])
+  @@index([sectionId, order])
+}
+
+// Downloadable assets, links, PDFs, code repos, etc. per lesson
+model LessonResource {
+  id       String @id @default(cuid())
+  lessonId String
+
+  title String
+  url   String
+  type  String? // "pdf", "zip", "link", "code", etc.
+  order Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId, order])
+}
+
+// Real progress tracking + video resume (core retention)
+model LessonProgress {
+  id       String @id @default(cuid())
+  userId   String
+  lessonId String
+
+  enrollmentId String?
+
+  completedAt         DateTime?
+  lastAccessedAt      DateTime?
+  watchSeconds        Int       @default(0)
+  lastPositionSeconds Int       @default(0) // Resume video exactly here
+  totalWatchSeconds   Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId, completedAt])
+  @@index([userId, lastAccessedAt])
+}
+
+// Student personal notes (huge retention delight)
+model LessonNote {
+  id       String @id @default(cuid())
+  userId   String
+  lessonId String
+
+  content String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId, updatedAt])
+}
+
+// Timestamped bookmarks + personal notes inside videos/lessons
+model LessonBookmark {
+  id       String @id @default(cuid())
+  userId   String
+  lessonId String
+
+  positionSeconds Int? // for video resume / highlight
+  label           String?
+  note            String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lessonId])
+  @@index([lessonId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quizzes (engagement + assessment retention)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Quiz {
+  id       String @id @default(cuid())
+  lessonId String @unique
+
+  title        String
+  description  String? @db.Text
+  passingScore Int     @default(70) // percent
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lesson    Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+}
+
+model QuizQuestion {
+  id     String @id @default(cuid())
+  quizId String
+  order  Int    @default(0)
+
+  question     String   @db.Text
+  options      String[] // e.g. ["Answer A", "Answer B"...]
+  correctIndex Int // which option index is correct (0-based)
+
+  createdAt DateTime @default(now())
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId, order])
+}
+
+model QuizAttempt {
+  id     String @id @default(cuid())
+  userId String
+  quizId String
+
+  enrollmentId String?
+
+  score   Int // 0-100
+  passed  Boolean
+  answers Json // { [questionId]: selectedIndex }
+
+  completedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([userId, completedAt])
+  @@index([quizId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Assignments (student submissions for ASSIGNMENT-type lessons)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AssignmentSubmission {
+  id        String   @id @default(cuid())
+  lessonId  String
+  userId    String
+  enrollmentId String?
+
+  /// Student's text answer (if applicable)
+  textContent String?  @db.Text
+  /// URLs of uploaded files (PDF, ZIP, etc.)
+  fileUrls    String[] @default([])
+
+  /// Draft = still editing, Submitted = awaiting grading, Graded = instructor scored it
+  status     SubmissionStatus @default(DRAFT)
+  submittedAt DateTime?
+  updatedAt  DateTime  @updatedAt
+  createdAt  DateTime  @default(now())
+
+  lesson     Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grade      Grade?
+
+  @@unique([lessonId, userId])
+  @@index([userId, status])
+  @@index([lessonId, status])
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  LATE
+  GRADED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grades (per-student, per-gradable-lesson)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Grade {
+  id        String   @id @default(cuid())
+  userId    String
+  lessonId  String
+  courseId  String
+  enrollmentId String?
+
+  /// Score as percentage (0–100)
+  score  Int
+  /// Whether the student passed (score >= passing threshold)
+  passed Boolean
+  /// Instructor's optional written feedback
+  feedback String? @db.Text
+  /// Who graded this (null = auto-graded, e.g. quiz)
+  gradedById String?
+  /// When the grade was issued
+  gradedAt DateTime @default(now())
+
+  /// Links to the submission if this is an assignment grade
+  submissionId String? @unique
+  /// Links to the quiz attempt if this is a quiz grade
+  quizAttemptId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson     Lesson               @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  course     Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  gradedBy   User?                @relation("GradedBy", fields: [gradedById], references: [id], onDelete: SetNull)
+  submission AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  @@unique([lessonId, userId])
+  @@index([courseId, userId])
+  @@index([userId])
+}
+
+// Enrollment & commerce
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Enrollment {
+  id       String @id @default(cuid())
+  tenantId String
+  courseId String
+  userId   String
+
+  source EnrollmentSource @default(MANUAL)
+  status EnrollmentStatus @default(ACTIVE)
+
+  /// External reference from integrating website (order id, user id, etc.)
+  externalRef String?
+
+  enrolledAt  DateTime  @default(now())
+  completedAt DateTime?
+  revokedAt   DateTime?
+
+  progressPercent Int @default(0) // denormalized for quick dashboard queries
+
+  lastAccessedAt DateTime? // for "continue learning" retention
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  certificate Certificate?
+
+  @@unique([courseId, userId])
+  @@index([tenantId, userId])
+  @@index([userId, status])
+  @@index([tenantId, lastAccessedAt])
+}
+
+model Purchase {
+  id       String @id @default(cuid())
+  tenantId String
+  courseId String
+  userId   String
+
+  amountCents Int
+  currency    String         @default("USD")
+  status      PurchaseStatus @default(PENDING)
+
+  /// Stripe / Lemon Squeezy / etc. reference
+  paymentProvider   String?
+  paymentProviderId String?
+
+  purchasedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([userId, status])
+}
+
+// Social proof on the marketplace + per-tenant
+model CourseReview {
+  id       String @id @default(cuid())
+  courseId String
+  userId   String
+
+  rating  Int // 1-5
+  comment String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@index([courseId, rating])
+}
+
+// Completion credential (verifiable record) - enhanced for delight
+model Certificate {
+  id           String @id @default(cuid())
+  enrollmentId String @unique
+  userId       String
+  courseId     String
+
+  certificateCode String   @unique
+  issuedAt        DateTime @default(now())
+
+  pdfUrl     String? // if we generate/store PDFs later
+  finalScore Int? // optional if quiz-based course
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course     Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+}
+
+// Community & discussions (huge for retention & belonging)
+model CourseComment {
+  id       String  @id @default(cuid())
+  courseId String
+  userId   String
+  lessonId String? // optional: comment on specific lesson
+
+  parentId String? // for threaded replies
+
+  content String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course  Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson  Lesson?         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  parent  CourseComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies CourseComment[] @relation("CommentReplies")
+
+  @@index([courseId, createdAt])
+  @@index([lessonId, createdAt])
+  @@index([userId])
+}
+
+// Gamification / retention achievements (students love collecting these)
+model Achievement {
+  id          String  @id @default(cuid())
+  tenantId    String? // null = platform-wide achievement
+  code        String  @unique // e.g. "first-lesson", "streak-7", "perfect-quiz", "course-finisher"
+  title       String
+  description String? @db.Text
+  icon        String? // emoji or simple identifier like "flame" "trophy"
+  points      Int     @default(10)
+
+  createdAt DateTime @default(now())
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id            String  @id @default(cuid())
+  userId        String
+  achievementId String
+  tenantId      String? // record which tenant context earned in (for leased orgs)
+
+  earnedAt DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId, earnedAt])
+}
+
+// Calendar events for students and instructors
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  tenantId    String
+  courseId    String?
+  userId      String?   // null = course-wide event, set = personal/targeted
+  createdById String   // who created this event
+
+  title       String
+  description String?  @db.Text
+  startDate   DateTime
+  endDate     DateTime?
+  allDay      Boolean  @default(false)
+  eventType   String   // "assignment_due" | "quiz_due" | "lesson_schedule" | "live_session" | "office_hours" | "course_event" | "custom"
+  url         String?  // relative link to relevant page
+  color       String?  // hex color for UI display
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  course    Course? @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User?   @relation("TargetUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy User    @relation("CreatedEvents", fields: [createdById], references: [id])
+
+  @@index([tenantId, startDate])
+  @@index([userId, startDate])
+  @@index([courseId, startDate])
+  @@index([createdById])
+  @@index([startDate])
+}
+
+// Immutable audit trail for security-sensitive operations
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  actorId   String
+  tenantId  String?
+  targetId  String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+}
+
+// In-app notification system for user engagement
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String    // "comment_reply" | "achievement_unlocked" | "course_update" | "enrollment" | "streak_reminder"
+  title     String
+  body      String?   @db.Text
+  link      String?   // relative URL to navigate to
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Email queue for transactional sending (with tenant branding support)
+model EmailLog {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  body      String   @db.Text
+  type      String   // "streak_reminder" | "certificate_earned" | "welcome" | "invite"
+  tenantId  String?
+  status    String   @default("PENDING") // PENDING | SENT | FAILED
+  error     String?  @db.Text
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+// Auth.js required models for Email provider (verification tokens) and OAuth account linking
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

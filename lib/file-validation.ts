@@ -1,0 +1,32 @@
+const MAGIC_BYTES: Record<string, Uint8Array[]> = {
+  "image/png": [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+  "image/jpeg": [
+    new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
+    new Uint8Array([0xff, 0xd8, 0xff, 0xe1]),
+    new Uint8Array([0xff, 0xd8, 0xff, 0xe2]),
+    new Uint8Array([0xff, 0xd8, 0xff, 0xe3]),
+  ],
+  "image/gif": [new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]), new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])],
+  "image/webp": [new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])],
+  "image/svg+xml": [], // cannot validate SVG magic bytes reliably; rely on MIME + content sanitization
+  "application/pdf": [new Uint8Array([0x25, 0x50, 0x44, 0x46])],
+  "application/zip": [new Uint8Array([0x50, 0x4b, 0x03, 0x04]), new Uint8Array([0x50, 0x4b, 0x05, 0x06]), new Uint8Array([0x50, 0x4b, 0x07, 0x08])],
+  "application/x-zip-compressed": [new Uint8Array([0x50, 0x4b, 0x03, 0x04])],
+  "application/msword": [new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [new Uint8Array([0x50, 0x4b, 0x03, 0x04])],
+  "application/vnd.ms-excel": [new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])],
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [new Uint8Array([0x50, 0x4b, 0x03, 0x04])],
+};
+
+export function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
+  const signatures = MAGIC_BYTES[mimeType];
+  if (!signatures) return true;
+  if (signatures.length === 0) return true;
+  return signatures.some((sig) => {
+    if (buffer.length < sig.length) return false;
+    for (let i = 0; i < sig.length; i++) {
+      if (sig[i] !== 0x00 && buffer[i] !== sig[i]) return false;
+    }
+    return true;
+  });
+}
