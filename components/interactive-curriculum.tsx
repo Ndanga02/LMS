@@ -219,7 +219,7 @@ export function InteractiveCurriculum({
               tenantSlug={tenantSlug}
               courseSlug={courseSlug}
               courseId={courseId}
-              initialNote={initialNotes[selectedLesson.id]}
+              initialNote={initialNotes[selectedLesson.id] ? { content: initialNotes[selectedLesson.id] } : null}
               initialBookmarks={initialBookmarks[selectedLesson.id] || []}
               isCompleted={completedLessonIds.has(selectedLesson.id)}
               onComplete={() => {
