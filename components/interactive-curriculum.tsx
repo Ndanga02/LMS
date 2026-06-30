@@ -220,7 +220,7 @@ export function InteractiveCurriculum({
               courseSlug={courseSlug}
               courseId={courseId}
               initialNote={initialNotes[selectedLesson.id] ? { content: initialNotes[selectedLesson.id] } : null}
-              initialBookmarks={initialBookmarks[selectedLesson.id] || []}
+              initialBookmarks={(initialBookmarks[selectedLesson.id] || []).map((b) => ({ ...b, createdAt: new Date() }))}
               isCompleted={completedLessonIds.has(selectedLesson.id)}
               onComplete={() => {
                 // simple reload for progress update (or parent revalidate in future)
