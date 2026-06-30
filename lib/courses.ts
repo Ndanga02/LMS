@@ -45,10 +45,12 @@ export const getMarketplaceCourses = cache(async () => {
   }));
 });
 
+type CourseLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "ALL_LEVELS";
+
 export type SearchFilters = {
   query?: string;
   category?: string;
-  level?: string;
+  level?: CourseLevel;
   price?: "free" | "paid";
   page?: number;
   pageSize?: number;
