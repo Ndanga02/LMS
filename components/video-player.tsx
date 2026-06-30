@@ -61,8 +61,6 @@ export function VideoPlayer({
   const [isNativeVideo, setIsNativeVideo] = useState(false);
   const onCompleteRef = useRef(onMarkComplete);
   onCompleteRef.current = onMarkComplete;
-  const savePositionRef = useRef(savePosition);
-  savePositionRef.current = savePosition;
 
   const ytEmbedUrl = isYouTube(videoUrl) ? getYouTubeEmbed(videoUrl) : null;
   const muxPlaybackId = isMuxVideo(videoUrl) ? getMuxPlaybackId(videoUrl) : null;
@@ -112,6 +110,9 @@ export function VideoPlayer({
     },
     [lessonId, onPositionUpdate, tenantSlug, courseSlug]
   );
+
+  const savePositionRef = useRef(savePosition);
+  savePositionRef.current = savePosition;
 
   // Native video event handlers
   const handleTimeUpdate = () => {
