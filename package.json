@@ -15,7 +15,7 @@
     "test:e2e:ui": "playwright test --ui",
     "db:test": "tsx --env-file=.env scripts/test-db.ts",
     "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "postinstall": "echo 'Run `npx playwright install --with-deps` manually for E2E tests'"
+    "postinstall": "prisma generate && echo 'Run `npx playwright install --with-deps` manually for E2E tests'"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
