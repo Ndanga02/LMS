@@ -134,8 +134,17 @@ export default async function PlatformCoursePage({ params }: PageProps) {
 
               {/* NEW: Premium interactive curriculum with VideoPlayer, notes, bookmarks, quizzes, community */}
               <InteractiveCurriculum
-                sections={course.sections || []}
-                flatLessons={course.lessons || []}
+                sections={(course.sections || []).map((s) => ({
+                  ...s,
+                  lessons: s.lessons.map((l) => ({
+                    ...l,
+                    dueDate: l.dueDate?.toISOString() ?? null,
+                  })),
+                }))}
+                flatLessons={(course.lessons || []).map((l) => ({
+                  ...l,
+                  dueDate: l.dueDate?.toISOString() ?? null,
+                }))}
                 completedLessonIds={completedLessonIds}
                 tenantSlug="platform"
                 courseSlug={slug}
