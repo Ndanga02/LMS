@@ -9,7 +9,7 @@ type LessonSummary = {
   id: string;
   title: string;
   slug: string;
-  type: string;
+  type: "VIDEO" | "TEXT" | "QUIZ" | "FILE" | "ASSIGNMENT";
   durationMin: number | null;
   dueDate: string | null;
   content: string | null;
