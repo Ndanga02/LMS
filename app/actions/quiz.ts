@@ -108,7 +108,7 @@ export async function updateQuizQuestionAction(tenantSlug: string, formData: For
     correctIndex: formData.get("correctIndex") ? Number(formData.get("correctIndex")) : undefined,
   };
 
-  if (raw.options && raw.options.length < 2) raw.options = undefined;
+  if (raw.options && raw.options.length < 2) raw.options = undefined as unknown as string[];
   if (raw.correctIndex !== undefined && raw.options && raw.correctIndex >= raw.options.length) {
     throw new Error("Correct answer index is out of range.");
   }
