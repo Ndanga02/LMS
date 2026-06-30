@@ -17,7 +17,7 @@ type LessonSummary = {
   order: number;
   isPublished: boolean;
   resources: { id: string; title: string; url: string; type: string | null; order: number }[];
-  quiz: { id: string; questions: { id: string; question: string; options: string[]; correctIndex: number; order: number }[]; passingScore?: number | null } | null;
+  quiz: { id: string; questions: { id: string; question: string; options: string[]; correctIndex: number; order: number }[]; passingScore?: number } | null;
 };
 
 type SectionSummary = {
