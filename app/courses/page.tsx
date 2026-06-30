@@ -44,7 +44,7 @@ export default async function CoursesPage({ searchParams }: PageProps) {
       searchCourses({
         query: filters.q,
         category: filters.category,
-        level: filters.level,
+        level: filters.level as CourseLevel | undefined,
         price: filters.price,
         page,
         pageSize,

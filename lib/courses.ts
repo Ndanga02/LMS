@@ -45,7 +45,7 @@ export const getMarketplaceCourses = cache(async () => {
   }));
 });
 
-type CourseLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "ALL_LEVELS";
+export type CourseLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED" | "ALL_LEVELS";
 
 export type SearchFilters = {
   query?: string;
