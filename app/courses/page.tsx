@@ -17,7 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ensureAppBootstrap } from "@/lib/bootstrap";
-import { searchCourses, getCourseCategories } from "@/lib/courses";
+import { searchCourses, getCourseCategories, type CourseLevel } from "@/lib/courses";
 import { isDbError, prisma } from "@/lib/db";
 import { getSessionUser, resolveDbUserId } from "@/lib/session";
 
